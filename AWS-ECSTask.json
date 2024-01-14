@@ -1,0 +1,360 @@
+#
+# Copyright 2023 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this
+# software and associated documentation files (the "Software"), to deal in the Software
+# without restriction, including without limitation the rights to use, copy, modify,
+# merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+# PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+# HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+# SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+#
+schemaVersion: "0.3"
+description: |
+  ### Document name - AWS-ECSRunTask
+
+  ## What does this document do?
+  The AWS-ECSRunTask runbook starts a new ECS task using the specified task definition using
+  the [RunTask](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_RunTask.html) API.
+
+  ## Input Parameters
+  * AutomationAssumeRole:(Optional) The Amazon Resource Name (ARN) of the AWS Identity and Access Management (IAM) role
+    that allows Systems Manager Automation to perform the actions on your behalf. If no role is specified,
+    Systems Manager Automation uses the permissions of the user that starts this runbook.
+    * Default: ""
+  * TaskDefinition: (Required) The family and revision (family:revision) or full ARN of the task definition to run.
+    If a revision isn't specified, the latest ACTIVE revision is used.
+  * CapacityProviderStrategy: (Optional) The capacity provider strategy to use for the task. If a
+    capacityProviderStrategy is specified, the launchType parameter must be omitted. If no capacityProviderStrategy or
+    launchType is specified, the defaultCapacityProviderStrategy for the cluster is used.
+    * Default: []
+  * Cluster: (Optional) The short name or full Amazon Resource Name (ARN) of the cluster to run your task on.
+    If you do not specify a cluster, the default cluster is assumed.
+    * Default: ""
+  * Count: (Optional) The number of instantiations of the specified task to place on your cluster.
+    You can specify up to 10 tasks for each call.
+    * Default: 1
+  * EnableECSManagedTags: (Optional) Specifies whether to enable Amazon ECS managed tags for the task. For more
+    information, see
+    [Tagging Your Amazon ECS Resources](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-using-tags.html)
+    in the Amazon Elastic Container Service Developer Guide.
+    * Default: `false`
+  * EnableExecuteCommand: (Optional) Determines whether to enable the execute command functionality for the containers
+    in this task. If true, this enables execute command functionality on all containers in the task and the task
+    definition must have a task role, or you must provide one as an override.
+    * Default: `false`
+  * Group: (Optional) The name of the task group to associate with the task. The default value is the family
+    name of the task definition (for example, `family:my-family-name`).
+    * Default: ""
+  * LaunchType: (Optional) The infrastructure to run your standalone task on. For more information, see Amazon ECS
+    launch types in the Amazon Elastic Container Service Developer Guide. A task can use either a launch type or a
+    capacity provider strategy. If a launchType is specified, the capacityProviderStrategy parameter must be omitted.
+    Valid Values: EC2 | FARGATE | EXTERNAL
+    * Default: ""
+  * NetworkConfiguration: (Optional) The network configuration for the task. This parameter is required for task
+    definitions that use the awsvpc network mode to receive their own elastic network interface, and it isn't supported
+    for other network modes. For more information, see
+    [Task Networking](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-networking.html) in the
+    Amazon Elastic Container Service Developer Guide.
+    * Default: {}
+  * Overrides: (Optional) A list of container overrides in JSON format that specify the name of a container in the
+    specified task definition and the overrides it should receive. You can override the default command for a container
+    (that's specified in the task definition or Docker image) with a `command` override. You can also override existing
+    environment variables (that are specified in the task definition or Docker image) on a container or add new
+    environment variables to it with an `environment` override.
+    * Default: {}
+  * PlacementConstraints: (Optional) An array of placement constraint objects to use for the task. You can specify up
+    to 10 constraints for each task (including constraints in the task definition and those specified at runtime).
+    * Default: []
+  * PlacementStrategy: (Optional) The placement strategy objects to use for the task. You can specify a maximum of 5
+    strategy rules for each task.
+    * Default: []
+  * PlatformVersion: (Optional) The platform version the task uses. A platform version is only specified for tasks
+    hosted on Fargate. If one isn't specified, the `LATEST` platform version is used. For more information, see
+    AWS Fargate platform versions in the Amazon Elastic Container Service Developer Guide.
+    * Default: ""
+  * PropagateTags: (Optional) Specifies whether to propagate the tags from the task definition to the task. If no value
+    is specified, the tags aren't propagated. Tags can only be propagated to the task during task creation. To add
+    tags to a task after task creation, use the TagResource API action.
+    * Default: ""
+  * ReferenceId: (Optional) The reference ID to use for the task. The reference ID can have a maximum length of
+    1024 characters.
+    * Default: ""
+  * StartedBy: (Optional) An optional tag specified when a task is started. For example, if you automatically
+    trigger a task to run a batch process job, you could apply a unique identifier for that job to your task with the
+    startedBy parameter. You can then identify which tasks belong to that job by filtering the results of a ListTasks
+    call with the startedBy value. Up to 36 letters (uppercase and lowercase), numbers, hyphens (-), and underscores (_)
+    are allowed.
+    * Default: ""
+  * Tags: (Optional) The metadata that you apply to the task to help you categorize and organize them. Each
+    tag consists of a key and an optional value, both of which you define.
+    * Default: []
+
+  ## Output Parameters
+  * RunTask.RunTaskResponse: Response from the RunTask api call.
+
+assumeRole: "{{AutomationAssumeRole}}"
+parameters:
+  AutomationAssumeRole:
+    type: AWS::IAM::Role::Arn
+    description: |
+      (Optional) The Amazon Resource Name (ARN) of the AWS Identity and Access Management (IAM) role that
+      allows Systems Manager Automation to perform the actions on your behalf. If no role is specified,
+      Systems Manager Automation uses the permissions of the user that starts this runbook.
+    default: ""
+  TaskDefinition:
+    type: String
+    description: |
+      (Required) The family and revision (family:revision) or full ARN of the task definition to run.
+      If a revision isn't specified, the latest ACTIVE revision is used.
+    allowedPattern: ^arn:(aws[a-zA-Z-]*):ecs:([A-Za-z0-9]+(-[A-Za-z0-9]+)+):([+-]?(?=\.\d|\d)(?:\d+)?(?:\.?\d*))(?:[eE]([+-]?\d+))?:task-definition\/([A-Za-z0-9]+(-[A-Za-z0-9]+)+):1|^[-_a-zA-Z\/\s\.“\-]*$
+  CapacityProviderStrategy:
+    type: MapList
+    description: |
+      (Optional) The capacity provider strategy to use for the task. If a capacityProviderStrategy is specified, the
+      launchType parameter must be omitted. If no capacityProviderStrategy or launchType is specified,
+      the defaultCapacityProviderStrategy for the cluster is used.
+    default: []
+    allowedPattern: ^\{.*\}$
+  Cluster:
+    type: String
+    description: |
+      (Optional) The short name or full Amazon Resource Name (ARN) of the cluster to run your task on.
+      If you do not specify a cluster, the default cluster is assumed.
+    default: ""
+    allowedPattern: ^$|^[A-Za-z0-9\/\s\."\-]+|[a-zA-Z-]|^[-_a-zA-Z\/\s\.“\-]*$
+  Count:
+    type: Integer
+    description: |
+      (Optional) The number of instantiations of the specified task to place on your cluster.
+      You can specify up to 10 tasks for each call.
+    default: 1
+    allowedPattern: ^\d+$
+  EnableECSManagedTags:
+    type: Boolean
+    description: |
+      (Optional) Specifies whether to enable Amazon ECS managed tags for the task. For more information, see
+      [Tagging Your Amazon ECS Resources](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-using-tags.html)
+      in the Amazon Elastic Container Service Developer Guide.
+    default: false
+  EnableExecuteCommand:
+    type: Boolean
+    description: |
+      (Optional) Determines whether to enable the execute command functionality for the containers in this task. If
+      true, this enables execute command functionality on all containers in the task and the task definition must have
+      a task role, or you must provide one as an override.
+    default: false
+  Group:
+    type: String
+    description: |
+      (Optional) The name of the task group to associate with the task. The default value is the family name of the task
+      definition (for example, `family:my-family-name`).
+    default: ""
+    allowedPattern: ^[\w\d\s_\.\/-:]{0,1024}$
+  LaunchType:
+    type: String
+    description: |
+      (Optional) The infrastructure to run your standalone task on. For more information, see Amazon ECS launch types
+      in the Amazon Elastic Container Service Developer Guide. A task can use either a launch type or a capacity
+      provider strategy. If a launchType is specified, the capacityProviderStrategy parameter must be omitted.
+      Valid Values: EC2 | FARGATE | EXTERNAL
+    default: ""
+    allowedPattern: ^$|^(EC2|FARGATE|EXTERNAL)$
+  NetworkConfiguration:
+    type: StringMap
+    description: |
+      (Optional) The network configuration for the task. This parameter is required for task definitions that use the
+      awsvpc network mode to receive their own elastic network interface, and it isn't supported for other network
+      modes. For more information, see
+      [Task Networking](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-networking.html) in the
+      Amazon Elastic Container Service Developer Guide.
+    default: {}
+    allowedPattern: ^\{.*\}$
+  Overrides:
+    type: StringMap
+    description: |
+      (Optional) A list of container overrides in JSON format that specify the name of a container in the specified task
+      definition and the overrides it should receive. You can override the default command for a container (that's
+      specified in the task definition or Docker image) with a `command` override. You can also override existing
+      environment variables (that are specified in the task definition or Docker image) on a container or add new
+      environment variables to it with an `environment` override.
+    default: {}
+    allowedPattern: ^\{.*\}$
+  PlacementConstraints:
+    type: MapList
+    description: |
+      (Optional) An array of placement constraint objects to use for the task. You can specify up to 10 constraints for
+      each task (including constraints in the task definition and those specified at runtime).
+    default: []
+    allowedPattern: ^\{.*\}$
+  PlacementStrategy:
+    type: MapList
+    description: |
+      (Optional) The placement strategy objects to use for the task. You can specify a maximum of 5 strategy rules
+      for each task.
+    default: []
+    allowedPattern: ^\{.*\}$
+  PlatformVersion:
+    type: String
+    description: |
+      (Optional) The platform version the task uses. A platform version is only specified for tasks hosted on Fargate.
+      If one isn't specified, the `LATEST` platform version is used. For more information, see AWS Fargate platform
+      versions in the Amazon Elastic Container Service Developer Guide.
+    default: ""
+    allowedPattern: ^[\w\d\s_\.\/-:]{0,1024}$
+  PropagateTags:
+    type: String
+    description: |
+      (Optional) Specifies whether to propagate the tags from the task definition to the task. If no value is specified,
+      the tags aren't propagated. Tags can only be propagated to the task during task creation. To add tags to a task
+      after task creation, use the TagResource API action.
+    default: ""
+    allowedPattern: ^[\w\d\s_\.\/-:]{0,1024}$
+  ReferenceId:
+    type: String
+    description: |
+      (Optional) The reference ID to use for the task. The reference ID can have a maximum length of 1024 characters.
+    default: ""
+    allowedPattern: ^[\w\d\s_\.\/-:]{0,1024}$
+  StartedBy:
+    type: String
+    description: |
+      (Optional) An optional tag specified when a task is started. For example, if you automatically trigger a task to
+      run a batch process job, you could apply a unique identifier for that job to your task with the startedBy
+      parameter. You can then identify which tasks belong to that job by filtering the results of a ListTasks call with
+      the startedBy value. Up to 36 letters (uppercase and lowercase), numbers, hyphens (-), and underscores (_)
+      are allowed.
+    default: ""
+    allowedPattern: ^[\w\d\s_\.\/-:]{0,36}$
+  Tags:
+    type: MapList
+    description: |
+      (Optional) The metadata that you apply to the task to help you categorize and organize them. Each tag consists of
+      a key and an optional value, both of which you define.
+    default: []
+    allowedPattern: ^\{.*\}$
+
+outputs:
+  - RunTask.RunTaskResponse
+mainSteps:
+  - name: RunTask
+    action: aws:executeScript
+    description: |
+      ## RunTask
+      Starts a new ECS task using the specified task definition.
+      ## Outputs
+      * RunTaskResponse: Response of the RunTask API call.
+      * ClusterName: Name of the ECS Cluster that the task was run on.
+      * TaskArn: Full ARN entry of the task that was run.
+    timeoutSeconds: 600
+    inputs:
+      Runtime: python3.8
+      Handler: handler
+      InputPayload:
+        TaskDefinition: "{{TaskDefinition}}"
+        CapacityProviderStrategy: "{{CapacityProviderStrategy}}"
+        Cluster: "{{Cluster}}"
+        Count: "{{Count}}"
+        EnableECSManagedTags: "{{EnableECSManagedTags}}"
+        EnableExecuteCommand: "{{EnableExecuteCommand}}"
+        Group: "{{Group}}"
+        LaunchType: "{{LaunchType}}"
+        Overrides: "{{Overrides}}"
+        PlacementConstraints: "{{PlacementConstraints}}"
+        PlacementStrategy: "{{PlacementStrategy}}"
+        PlatformVersion: "{{PlatformVersion}}"
+        PropagateTags: "{{PropagateTags}}"
+        NetworkConfiguration: "{{NetworkConfiguration}}"
+        ReferenceId: "{{ReferenceId}}"
+        StartedBy: "{{StartedBy}}"
+        Tags: "{{Tags}}"
+      Script: |
+        import boto3
+        import datetime
+        import json
+
+
+        def extract_value(event_value):
+            if not event_value:
+                return None
+            if isinstance(event_value, str):
+                return event_value.strip()
+            return event_value
+
+
+        def serialize_datetime(object):
+            if isinstance(object, (datetime.date, datetime.datetime)):
+                return object.isoformat()
+            return str(object)
+
+
+        def handler(event, context):
+            run_task_parameters = dict(
+                capacityProviderStrategy=extract_value(event["CapacityProviderStrategy"]),
+                cluster=extract_value(event["Cluster"]),
+                count=extract_value(event["Count"]),
+                enableECSManagedTags=extract_value(event["EnableECSManagedTags"]),
+                enableExecuteCommand=extract_value(event["EnableExecuteCommand"]),
+                group=extract_value(event["Group"]),
+                launchType=extract_value(event["LaunchType"]),
+                networkConfiguration=extract_value(event["NetworkConfiguration"]),
+                overrides=extract_value(event["Overrides"]),
+                placementConstraints=extract_value(event["PlacementConstraints"]),
+                placementStrategy=extract_value(event["PlacementStrategy"]),
+                platformVersion=extract_value(event["PlatformVersion"]),
+                propagateTags=extract_value(event["PropagateTags"]),
+                referenceId=extract_value(event["ReferenceId"]),
+                startedBy=extract_value(event["StartedBy"]),
+                tags=extract_value(event["Tags"]),
+                taskDefinition=extract_value(event["TaskDefinition"])
+            )
+
+            run_task_parameters_without_null_values = {}
+            for parameter_key, parameter_value in run_task_parameters.items():
+                if parameter_value is not None:
+                    run_task_parameters_without_null_values[parameter_key] = parameter_value
+
+            ecs_client = boto3.client("ecs")
+            response = ecs_client.run_task(**run_task_parameters_without_null_values)
+
+            results = {}
+            results["TaskArn"] = response["tasks"][0]["taskArn"]
+            results["ClusterName"] = run_task_parameters_without_null_values.get("cluster", "default")
+            results["RunTaskResponse"] = json.dumps(response, indent=4, default=serialize_datetime)
+
+            return results
+    outputs:
+      - Name: RunTaskResponse
+        Selector: $.Payload.RunTaskResponse
+        Type: String
+      - Name: ClusterName
+        Selector: $.Payload.ClusterName
+        Type: String
+      - Name: TaskArn
+        Selector: $.Payload.TaskArn
+        Type: String
+
+  - name: VerifyRunTask
+    action: aws:waitForAwsResourceProperty
+    description: |
+      ## VerifyRunTask
+        Verifies the Task has a `lastStatus` of `RUNNING`, `DEACTIVATING`, `STOPPING`, `DEPROVISIONING` or `STOPPED`.
+    timeoutSeconds: 600
+    inputs:
+      Service: ecs
+      Api: DescribeTasks
+      cluster: "{{RunTask.ClusterName}}"
+      tasks:
+        - "{{RunTask.TaskArn}}"
+      PropertySelector: $.tasks[0].lastStatus
+      DesiredValues:
+        - RUNNING
+        - DEACTIVATING
+        - STOPPING
+        - DEPROVISIONING
+        - STOPPED
