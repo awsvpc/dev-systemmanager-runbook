@@ -1,0 +1,9 @@
+description: Run a lambda function "ListAllInstances"
+schemaVersion: '0.3'
+mainSteps:
+  - name: RunLambdaScriptCWAlarm
+    action: 'aws:invokeLambdaFunction'
+    inputs:
+      InvocationType: RequestResponse
+      FunctionName: ListAllInstances
+    description: Run a lambda function "ListAllInstances"
