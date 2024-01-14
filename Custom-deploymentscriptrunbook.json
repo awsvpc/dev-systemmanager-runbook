@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "2.2",
+  "description": "A simple AWS-RunShellScript document to fetch and run a bash script from an S3 bucket URL",
+  "mainSteps": [
+    {
+      "action": "aws:runShellScript",
+      "name": "runShellScript",
+      "inputs": {
+        "runCommand": [
+          "aws s3 cp s3://shr-devop-dep/runningservers/Error-handling-for-Daily-Deployments.sh /tmp/Error-handling-for-Daily-Deployments.sh",
+          "chmod +x /tmp/Error-handling-for-Daily-Deployments.sh",
+          "/tmp/Error-handling-for-Daily-Deployments.sh"
+        ]
+      }
+    }
+  ]
+}
