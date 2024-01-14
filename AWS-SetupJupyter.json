@@ -1,0 +1,273 @@
+schemaVersion: "0.3"
+description: |-
+  ## Name
+    AWS-SetupJupyter
+  
+  ## Intent
+    This document configures Jupyter notebook on the targeted Amazon Linux instances according to AWS recommendations. 
+    For more info refer to: https://docs.aws.amazon.com/dlami/latest/devguide/setup-jupyter-config.html
+  
+  ## Notes
+    * A role with enough permissions should be provided for the document to be able to start or stop the configuration recording (otherwise the document will run with the caller identity).
+    * Targeted instances must be managed by System Manager.
+    * The operating system of the instance or AMI must be linux as jupyter is not available for the other platforms.
+    * The instance must be running to be able to execute the document.
+    * The ssm parameter that saves the password needed to secure jupyter server must be valid.
+  
+  ## Permissions required for AutomationAssumeRole
+    * cloudformation:CreateStack.
+    * cloudformation:DescribeStacks.
+    * cloudformation:DeleteStack.
+    * ec2:RunInstances.
+    * ec2:DescribeInstances.
+    * ec2:DescribeKeyPairs.
+    * iam:GetRole.
+    * iam:PassRole.
+    * iam:DetachRolePolicy.
+    * iam:DeleteRolePolicy.
+    * iam:CreateRole.
+    * iam:DeleteRole.
+    * iam:AttachRolePolicy.
+    * iam:PutRolePolicy.
+    * lambda:CreateFunction.
+    * lambda:InvokeFunction.
+    * lambda:GetFunction.
+    * lambda:DeleteFunction.
+    * ssm:SendCommand.
+    * ssm:GetAutomationExecution.
+    * ssm:StartAutomationExecution.
+    * ssm:GetParameter.
+    * ssm:GetCommandInvocation.
+assumeRole: "{{ AutomationAssumeRole }}"
+parameters:
+  AmiId:
+    type: String
+    description: '(Optional) AMI id to use for launching the instance.'
+    default: ''
+    allowedPattern: '^$|(ami-[0-9a-f]{8,17}){0,1}'
+  InstanceId:
+    type: String
+    description: '(Optional) Instance Id'
+    default: ''
+    allowedPattern: '^$|i-[a-z0-9]{8,17}$'
+  VpcId:
+    type: String
+    description: '(Optional) New instance will be deployed into this vpc or in the
+      default vpc if not specified.'
+    default: Default
+    allowedPattern: '[-_a-zA-Z0-9]*'
+  SubnetId:
+    type: String
+    description: '(Optional) New instance will be deployed into this subnet or in
+      the default subnet if not specified.'
+    default: Default
+    allowedPattern: '[-_a-zA-Z0-9]*'
+  RoleName:
+    type: String
+    description: '(Optional) Role Name to create.'
+    default: SSMManagedLinuxInstanceProfileRole
+    allowedPattern: '[-_a-zA-Z0-9]*'
+  SecGroupName:
+    type: String
+    description: '(Optional) Security Group Name to create.'
+    default: SSMSecurityGroupForLinuxInstances
+    allowedPattern: '^\S|\S[A-Za-z0-9_-]*$'
+  InstanceType:
+    type: String
+    description: '(Optional) Type of instance to launch. Default is t3.medium.'
+    default: t3.medium
+    allowedPattern: '^[a-z]\d.*'
+  KeyPairName:
+    type: String
+    description: '(Optional) Key pair to use when creating instance.'
+    default: ''
+    allowedPattern: '^[A-Za-z0-9_-]*$'
+  RemoteAccessCidr:
+    type: String
+    description: '(Optional) Replaced by make.'
+    default: 0.0.0.0/0
+    allowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})|^pl-[a-z0-9]{8,15}$'
+  AutomationAssumeRole:
+    type: AWS::IAM::Role::Arn
+    description: '(Optional) The ARN of the role that allows Automation to perform
+      the actions on your behalf'
+    default: ''
+    allowedPattern: '^$|arn:(aws[a-zA-Z-]*)?:iam::\d{12}:role\/?[a-zA-Z_0-9+=,.@\-_\/]+'
+  JupyterPasswordSSMKey:
+    type: String
+    description: '(Required) The name of an encrypted SSM Parameter containing the password to secure Jupyter.'
+    allowedPattern: '^[a-zA-Z0-9_.-/]*$'
+  StackName:
+    type: String
+    description: '(Optional) The stack where the instance will be created'
+    default: CreateManagedInstanceStack
+    allowedPattern: '[-_a-zA-Z0-9]*'
+  HttpTokens:
+    type: String
+    description: '(Optional) How the instance Metadata are retrieved within the instance. required - only IMDSV2 credential/token will be supported, optional - both IMDSV1/V2 are supported.'
+    default: optional
+    allowedValues:
+      - optional
+      - required
+
+mainSteps:
+  - name: SetupJupyter
+    action: aws:executeScript
+    onFailure: Abort
+    isCritical: true
+    timeoutSeconds: 300
+    description: |
+      ## SetupJupyterScriptExecution
+      Configures Jupyter notebook on the targeted Amazon Linux instances according to AWS recommendations.
+    inputs:
+      Runtime: python3.8
+      Handler: setup_jupyter
+      InputPayload:
+        InstanceId: '{{InstanceId}}'
+        JupyterPasswordSSMKey: '{{JupyterPasswordSSMKey}}'
+        VpcId: '{{VpcId}}'
+        AmiId: '{{AmiId}}'
+        SubnetId: '{{SubnetId}}'
+        RoleName: '{{RoleName}}'
+        InstanceType: '{{InstanceType}}'
+        SecGroupName: '{{SecGroupName}}'
+        KeyPairName: '{{KeyPairName}}'
+        RemoteAccessCidr: '{{RemoteAccessCidr}}'
+        StackName: '{{StackName}}'
+        HttpTokens: '{{HttpTokens}}'
+      Script: |
+        import json
+        import boto3
+        import time
+
+        ssm_client = boto3.client('ssm')
+        ec2_client = boto3.client('ec2')
+        
+
+        def setup_jupyter(event, context):
+            instance_id = event["InstanceId"]
+            ami_id = event["AmiId"]
+            key_pair = event["KeyPairName"]
+            jupyter_password_key_name = event["JupyterPasswordSSMKey"]
+            stack_name = event["StackName"] 
+            http_tokens = event["HttpTokens"]
+        
+            validateInput(instance_id, ami_id, key_pair)
+
+            # get jupyter password from ssm parameter store
+            jupyter_password = get_jupyter_password_from_ssm_parameter_store(jupyter_password_key_name)
+
+            # check if the Ami id is provided, create a new instance 
+            if ami_id != "":
+              execution_id = ssm_client.start_automation_execution(
+                DocumentName='AWS-CreateManagedLinuxInstance',
+                Parameters={
+                  'AmiId': [ami_id],
+                  'KeyPairName' : [key_pair],
+                  'VpcId': [event['VpcId']],
+                  'SubnetId': [event['SubnetId']],
+                  'RoleName': [event['RoleName']],
+                  'InstanceType': [event['InstanceType']],
+                  'GroupName': [event['SecGroupName']],
+                  'RemoteAccessCidr': [event['RemoteAccessCidr']],
+                  'StackName': [stack_name],
+                  'HttpTokens': [http_tokens]
+                  },
+              )["AutomationExecutionId"]
+        
+        
+              if automation_execution_status(execution_id) == 'Success':
+                  instance_id = ec2_client.describe_instances(
+                    Filters=[{'Name': 'tag:aws:cloudformation:stack-name', 'Values': [stack_name]}])["Reservations"][0]["Instances"][0]["InstanceId"]
+              else:
+                  raise Exception('Error creating instance given the input parameters')
+        
+            # configure jupyter
+            status = configure_password_and_certificate(instance_id, jupyter_password)
+            if status == 'Success':
+              return {'output': json.dumps({'status': 'Jupyter Successfully configured'})}
+            else:
+              raise Exception('Failed to configure Jupyter. Jupyter must be installed.')
+
+        def validateInput(instance_id, ami_id, key_pair):
+            # check whether instance id or AMI id is provided 
+            if instance_id == "" and ami_id == "":
+              raise Exception('instance id or Ami id should be provided')
+            if instance_id != "" and ami_id != "":
+              raise Exception('instance id or Ami id should be provided not both of them')
+            if ami_id != "" and key_pair == "":
+              raise Exception('Key pair must be present if the ami id is present')
+            if ami_id != "" and key_pair != "":
+              response = ec2_client.describe_key_pairs(
+                Filters=[
+                  {
+                      'Name': 'key-name',
+                      'Values': [key_pair]
+                  },
+                ],
+              )["KeyPairs"]
+              if len(response) == 0:
+                raise Exception("You must provide a valid key pair name")
+
+        def configure_password_and_certificate(instance_id, jupyter_password):
+            response = ssm_client.send_command(
+              InstanceIds=[instance_id],
+              DocumentName="AWS-RunShellScript",
+              TimeoutSeconds=500,
+              Parameters={'commands': ['if ! jupyter notebook --version;then', 'exit 1', 'fi', 'yes {} | jupyter notebook password'.format(jupyter_password), 
+              'cd ~', 'mkdir ssl', 'cd ssl', 'yes jp | openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout mykey.key -out mycert.pem']}
+            )
+            command_id = response['Command']['CommandId']
+            status, status_details = get_command_status_with_wait(instance_id, command_id)
+        
+            return status_details
+        
+        def get_jupyter_password_from_ssm_parameter_store(jupyter_password_key_name):
+            try:
+              response = ssm_client.get_parameter(
+                Name=jupyter_password_key_name,
+                WithDecryption=True
+              ) 
+            except ssm_client.exceptions.ParameterNotFound as e:
+              raise Exception('Jupyter Password not found')
+            return response["Parameter"]["Value"]
+
+        def automation_execution_status(execution_id, block_on_waiting=True, status_callback=None):
+            """Return execution status, waiting for completion if in progress."""
+            statuses = ('Pending', 'InProgress', 'Waiting')
+            if not block_on_waiting:
+                statuses = PENDING_AUTOMATION_STATUS
+
+            while True:
+                current_status = ssm_client.get_automation_execution(
+                    AutomationExecutionId=execution_id)['AutomationExecution']['AutomationExecutionStatus']
+                if status_callback is not None:
+                    status_callback({"status": current_status})
+
+                if current_status not in statuses:
+                    return current_status
+                time.sleep(30)
+
+        def get_command_status_with_wait(instance_id, command_id):
+            WAITING_STATUS = ['Pending', 'InProgress', 'Delayed']
+            MAX_RETRIALS_NUM = 3
+            retries = 0         
+            time.sleep(2)
+            response = ssm_client.get_command_invocation(
+                CommandId=command_id,
+                InstanceId=instance_id
+            )
+            status = response["Status"]
+            details = response["StatusDetails"]
+
+            if status in WAITING_STATUS and retries < MAX_RETRIALS_NUM:
+                retries += 1
+                time.sleep(10)
+                status, details = get_command_status_with_wait(instance_id, command_id)
+
+            retries = 0
+            return status, details
+    outputs:
+      - Name: output
+        Selector: $.Payload.output
+        Type: String
